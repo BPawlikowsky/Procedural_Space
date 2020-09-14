@@ -3,37 +3,41 @@
 void init(void);
 void render();
 void update(float delta);
-void updateTiles(SDL_bool dir);
+void updateTiles();
 void updateControls(float delta);
 void updateTextures();
+void updateTPos();
+void updateTilePos();
+void updateSize();
+float zoomCalc();
 
 #define nScreenWidth 800
 #define nScreenHeight 600
+#define nTopSpeed 500
+#define nMaxZoom 4
 
 SDL_Window *window = NULL;
 SDL_Renderer *renderer = NULL;
-SDL_Texture* firsttexture = NULL;
-SDL_Texture* texture = NULL;
-SDL_Texture* lasttexture = NULL;
-SDL_Rect firstrect, rect, lastrect;
+SDL_Texture* textures[3][3];
+SDL_Rect rects[3][3];
+starSystem systems[3][3], currentSystem;
 Uint32 nState = 0;
 int map[nScreenWidth*nScreenHeight];
-int tile[nScreenWidth*nScreenHeight];
-starSystem firstSys, renderSys, lastSys;
 
 vec2 tPos = {0,0};
 int frames;
 float milis;
 SDL_bool pressed = SDL_FALSE;
 ship player;
-int speed = 5000;
+int speed = 0;
+float zoom = 4.0f;
 
 int main(void) {
   // Init Video
   init();
   //Init Vars
-  player.pos.x = (int)( nScreenWidth/2 );
-  player.pos.y = (int)( nScreenHeight/2 );
+  player.pos.x = (int)( (nScreenWidth*nScreenWidth) / 2);
+  player.pos.y = (int)((nScreenHeight*nScreenHeight / 2));
 
   //Time tracking
   uint32_t lastTick, currentTick;
@@ -78,8 +82,7 @@ int main(void) {
         if(milis >= 1.0f) {
           printf("tilePos x: %d y: %d | m: %f\n", tPos.x, tPos.y, milis);
           printf("PPos x: %d y: %d | \n", player.pos.x, player.pos.y);
-          printf("rect x: %d y: %d | \n", rect.x, rect.y);
-          printf("lastrect x: %d y: %d | \n", lastrect.x, lastrect.y);
+          printf("zoom: %f\n", zoom);
           milis = 0.0f;
           frames = 0;
           pressed = SDL_FALSE;
@@ -88,9 +91,11 @@ int main(void) {
   }
 
   //CLEANUP
-  SDL_DestroyTexture(firsttexture);
-  SDL_DestroyTexture(texture);
-  SDL_DestroyTexture(lasttexture);
+  for(int rows = 0; rows < 3; rows++) {
+      SDL_DestroyTexture(textures[rows][0]);
+      SDL_DestroyTexture(textures[rows][1]);
+      SDL_DestroyTexture(textures[rows][2]);
+    }
 
   SDL_DestroyRenderer(renderer);
   SDL_DestroyWindow(window);
@@ -104,16 +109,17 @@ void init() {
   //Create window and renderer
   SDL_CreateWindowAndRenderer(nScreenWidth, nScreenHeight, 0, &window, &renderer);
   //Initialize render tiles positions
-  firstrect.w = rect.w = lastrect.w = nScreenWidth;
-  firstrect.h = rect.h = lastrect.h = nScreenHeight;
-  firstrect.x = 0 - rect.w;
-  rect.x = 0;
-  lastrect.x = 0 + rect.w;
-  firstrect.y = rect.y = lastrect.y = 0;
-  //Initialize textures to SDL_TEXTUREACCESS_TARGET for drawing to them
-  texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, nScreenWidth, nScreenHeight);
-  lasttexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, nScreenWidth, nScreenHeight);
-  firsttexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, nScreenWidth, nScreenHeight);
+  int y = -1;
+  for(int rows = 0; rows < 3; rows++)
+    {
+      rects[rows][0].w = rects[rows][1].w = rects[rows][2].w = nScreenWidth;
+      rects[rows][0].h = rects[rows][1].h = rects[rows][2].h = nScreenHeight;
+      //Initialize textures to SDL_TEXTUREACCESS_TARGET for drawing to them
+      textures[rows][0] = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, nScreenWidth, nScreenHeight);
+      textures[rows][1] = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, nScreenWidth, nScreenHeight);
+      textures[rows][2] = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, nScreenWidth, nScreenHeight);
+      y++;
+    }
   //Generate "galaxy" map from nState seed
   generateMap(map);
 }
@@ -124,96 +130,152 @@ void render() {
   SDL_RenderClear(renderer);
 
   //Render Tiles
-  SDL_RenderCopy(renderer, firsttexture, NULL, &firstrect);
-  SDL_RenderCopy(renderer, texture, NULL, &rect);
-  SDL_RenderCopy(renderer, lasttexture, NULL, &lastrect);
+  for(int rows = 0; rows < 3; rows++) {
+    SDL_RenderCopy(renderer, textures[rows][0], NULL, &rects[rows][0]);
+    SDL_RenderCopy(renderer, textures[rows][1], NULL, &rects[rows][1]);
+    SDL_RenderCopy(renderer, textures[rows][2], NULL, &rects[rows][2]);
+    }
 
   //Render Player
   renderShip(renderer);
+
+  SDL_SetRenderDrawColor(renderer, 255, 255, 255, SDL_ALPHA_OPAQUE);
+  for(int x = 0; x < 3; x++)
+   for(int y = 0; y < 3;y++)
+     SDL_RenderDrawRect(renderer, &rects[x][y]);
 
   SDL_RenderPresent(renderer);
 }
 
 void update(float delta) {
   updateControls(delta);
-
-
-  if(lastrect.x <= 0) {
-    updateTiles(SDL_TRUE);
-    updateTextures();
-    }
-
-  if(firstrect.x >= 0) {
-    updateTiles(SDL_FALSE);
-    updateTextures();
-  }
+  updateTPos();
+  updateSize();
+  updateTilePos();
+  updateTiles();
+  updateTextures();
 }
 
-void updateTiles(SDL_bool dir) {
-  if(dir)
-    tPos.x++;
-  else
-    tPos.x--;
-  vec2 vTemp = tPos;
-  vTemp.x--;
-  firstSys = generateTile(vTemp, nState, map);
-  vTemp.x++;
-  renderSys = generateTile(vTemp, nState, map);
-  vTemp.x++;
-  lastSys = generateTile(vTemp, nState, map);
-  rect.x = nScreenWidth - (player.pos.x - ((tPos.x )* nScreenWidth));
-  lastrect.x = rect.x + rect.w;
-  firstrect.x = rect.x - rect.w;
+void updateTiles() {
+    vec2 vTemp = tPos;
+    vTemp.x--;
+    vTemp.y--;
+    for(int row = 0; row < 3; row++) {
+      systems[row][0] = generateTile(vTemp, nState, map);
+      vTemp.x++;
+      systems[row][1] = currentSystem = generateTile(vTemp, nState, map);
+      vTemp.x++;
+      systems[row][2] = generateTile(vTemp, nState, map);
+      vTemp.y++;
+      vTemp.x-=2;
+    }
+}
+
+void updateSize() {
+  for(int x = 0; x < 3; x++)
+    for(int y = 0; y < 3; y++) {
+      rects[x][y].w = (int)(nScreenWidth );
+      rects[x][y].h = (int)(nScreenHeight );
+    }
+}
+
+void updateTilePos() {
+  int px = (player.pos.x- (tPos.x * nScreenWidth));
+  int py = (player.pos.y- (tPos.y * nScreenHeight));
+  rects[1][1].x = (nScreenWidth - px);
+  rects[1][1].y = (nScreenHeight - py);
+  //Converting from [0 - ScreenSize] to [-1/2*ScreenSize - 1/2*ScreenSize]
+  int nr = (nScreenWidth/2)-(-(nScreenWidth/2));
+  rects[1][1].x = ((rects[1][1].x * nr) / nScreenWidth) + (-(nScreenWidth/2));
+  nr = (nScreenHeight/2)-(-(nScreenHeight/2));
+  rects[1][1].y = ((rects[1][1].y * nr) / nScreenHeight) + (-(nScreenHeight/2));
+
+  rects[0][0].x = rects[1][1].x - rects[1][1].w;
+  rects[0][1].x = rects[1][1].x;
+  rects[0][2].x = rects[1][1].x + rects[1][1].w;
+  rects[0][0].y = rects[1][1].y - rects[1][1].h;
+  rects[0][1].y = rects[1][1].y - rects[1][1].h;
+  rects[0][2].y = rects[1][1].y - rects[1][1].h;
+
+  rects[1][0].x = rects[1][1].x - rects[1][1].w;
+  rects[1][2].x = rects[1][1].x + rects[1][1].w;
+  rects[1][0].y = rects[1][1].y;
+  rects[1][2].y = rects[1][1].y;
+
+  rects[2][0].x = rects[1][1].x - rects[1][1].w;
+  rects[2][1].x = rects[1][1].x;
+  rects[2][2].x = rects[1][1].x + rects[1][1].w;
+  rects[2][0].y = rects[1][1].y + rects[1][1].h;
+  rects[2][1].y = rects[1][1].y + rects[1][1].h;
+  rects[2][2].y = rects[1][1].y + rects[1][1].h;
 }
 
 void updateTextures() {
   //Prepaire Textures
-  renderTile( renderSys, texture, renderer, nState);
-  renderTile( lastSys, lasttexture, renderer, nState);
-  renderTile( firstSys, firsttexture, renderer, nState);
+  for(int rows = 0; rows < 3; rows++) {
+    renderTile(systems[rows][0], textures[rows][0], renderer, nState);
+    renderTile(systems[rows][1], textures[rows][1], renderer, nState);
+    renderTile(systems[rows][2], textures[rows][2], renderer, nState);
+  }
 }
 
 void updateControls(float delta) {
   const Uint8* state = SDL_GetKeyboardState(NULL);
 
   if(state[SDL_SCANCODE_UP]) {
-      player.pos.y -= (int)(speed*delta);
-      if(player.pos.y <= 0)
-        player.pos.y += (int)(speed*delta);
-  }
-  else if(state[SDL_SCANCODE_DOWN]) {
+    if(speed < nTopSpeed) speed ++;
+    zoom = zoomCalc();
+    player.pos.y -= (int)(speed*delta);
+
+    if(player.pos.y <= (int)(nScreenHeight/2))
       player.pos.y += (int)(speed*delta);
-      if(player.pos.y >= (nScreenHeight*nScreenHeight))
-        player.pos.y += (int)(speed*delta);
   }
+
+  else if(state[SDL_SCANCODE_DOWN]) {
+    if(speed < nTopSpeed) speed ++;
+    zoom = zoomCalc();
+    player.pos.y += (int)(speed*delta);
+    if(player.pos.y >= (nScreenHeight*nScreenHeight)-(int)(nScreenHeight/2))
+      player.pos.y -= (int)(speed*delta);
+  }
+
   else if(state[SDL_SCANCODE_LEFT]) {
-      player.pos.x -= (int)(speed*delta);
-      //Move Tiles
-      firstrect.x +=  (int)(speed*delta);
-      rect.x +=  (int)(speed*delta);
-      lastrect.x +=  (int)(speed*delta);
-      if(player.pos.x <= (int)(nScreenWidth/2))
-        {
-          player.pos.x += (int)(speed*delta);
-          //Move Tiles
-          firstrect.x -=  (int)(speed*delta);
-          rect.x -=  (int)(speed*delta);
-          lastrect.x -=  (int)(speed*delta);
-        }
+    if(speed < nTopSpeed)
+      speed ++;
+    zoom = zoomCalc();
+    player.pos.x -= (int)(speed*delta);
+
+    if(player.pos.x <= (int)(nScreenWidth/2))
+      player.pos.x += (int)(speed*delta);
   }
   else if(state[SDL_SCANCODE_RIGHT]) {
-      player.pos.x += (int)(speed*delta);
-      //Move Tiles
-      firstrect.x -=  (int)(speed*delta);
-      rect.x -=  (int)(speed*delta);
-      lastrect.x -=  (int)(speed*delta);
-      if(player.pos.x >= (nScreenWidth*nScreenWidth)-(int)(nScreenWidth/2))
-        {
-          player.pos.x -= (int)(speed*delta);
-          //Move Tiles
-          firstrect.x +=  (int)(speed*delta);
-          rect.x += (int)(speed*delta);
-          lastrect.x += (int)(speed*delta);
-        }
+    if(speed < nTopSpeed) speed ++;
+    zoom = zoomCalc();
+    player.pos.x += (int)(speed*delta);
+
+    if(player.pos.x >= (nScreenWidth*nScreenWidth)-(int)(nScreenWidth/2))
+      {
+        player.pos.x -= (int)(speed*delta);
+      }
   }
+  else {
+    if(speed > 0) {
+      speed --;
+      zoom = zoomCalc();
+    }
+    else {
+      speed = 0;
+      zoom = nMaxZoom;
+    }
+  }
+}
+
+float zoomCalc() {
+  float zoomSpeed = speed * (0.2f - nMaxZoom) / (nTopSpeed) + nMaxZoom;
+  return zoomSpeed;
+}
+
+void updateTPos() {
+  tPos.x = (int)(player.pos.x / nScreenWidth);
+  tPos.y = (int)(player.pos.y / nScreenHeight);
 }
