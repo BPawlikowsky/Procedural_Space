@@ -1,35 +1,39 @@
-#include <SDL2/SDL.h>
 #include "ProcSpace.h"
 
 void init(void);
-void update(float delta, vec2* tilePos);
-void generateMap();
-starSystem* generateTile( vec2* tilePos);
-void generateSpace();
-starSystem* generateRed(vec2* pos);
-void generateGreen();
-void generateBlue();
-void generateWhite();
-void renderMap();
-void renderTile(starSystem* sSystem);
+void render();
+void update(float delta);
+void updateTiles(SDL_bool dir);
+void updateControls(float delta);
+void updateTextures();
 
-#define nScreenWidth 512
-#define nScreenHeight 512
+#define nScreenWidth 800
+#define nScreenHeight 600
 
 SDL_Window *window = NULL;
 SDL_Renderer *renderer = NULL;
-uint32_t nState = 0;
+SDL_Texture* firsttexture = NULL;
+SDL_Texture* texture = NULL;
+SDL_Texture* lasttexture = NULL;
+SDL_Rect firstrect, rect, lastrect;
+Uint32 nState = 0;
 int map[nScreenWidth*nScreenHeight];
 int tile[nScreenWidth*nScreenHeight];
-starSystem* renderSys;
+starSystem firstSys, renderSys, lastSys;
 
 vec2 tPos = {0,0};
-int frames, fps;
+int frames;
 float milis;
+SDL_bool pressed = SDL_FALSE;
+ship player;
+int speed = 5000;
 
 int main(void) {
   // Init Video
   init();
+  //Init Vars
+  player.pos.x = (int)( nScreenWidth/2 );
+  player.pos.y = (int)( nScreenHeight/2 );
 
   //Time tracking
   uint32_t lastTick, currentTick;
@@ -37,247 +41,179 @@ int main(void) {
   frames = 0;
   milis = 0.0f;
 
-
+  //If window created, continue
   if(window != NULL) {
     SDL_bool done = SDL_FALSE;
 
     //Clear screen
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
     SDL_RenderClear(renderer);
-    renderMap();
+
+    //Render "galaxy" map and wait for a sec
+    renderMap(map, renderer);
     SDL_RenderPresent(renderer);
     SDL_Delay(3000);
-    renderSys = malloc(sizeof(starSystem));
 
     //Main Loop
     while(!done)
       {
-        double fElapsedTime;
-        puts("B\n");
-        fElapsedTime = (double)(currentTick - lastTick)/1000.0f;
-        puts("A\n");
         SDL_Event event;
+        double fElapsedTime;
+        fElapsedTime = (double)(currentTick - lastTick)/1000.0f;
 
         lastTick = currentTick;
 
-        update(fElapsedTime, &tPos);
+        //UPDATE AND RENDER
+        update(fElapsedTime);
+        render();
 
         while(SDL_PollEvent(&event))
           if(event.type == SDL_QUIT)
             done = SDL_TRUE;
 
+        //Elapsed Time counting and debug stuff
         currentTick = SDL_GetTicks();
         milis += fElapsedTime;
         frames ++;
-        printf("f: %d | m: %f\n", frames, milis);
         if(milis >= 1.0f) {
+          printf("tilePos x: %d y: %d | m: %f\n", tPos.x, tPos.y, milis);
+          printf("PPos x: %d y: %d | \n", player.pos.x, player.pos.y);
+          printf("rect x: %d y: %d | \n", rect.x, rect.y);
+          printf("lastrect x: %d y: %d | \n", lastrect.x, lastrect.y);
           milis = 0.0f;
           frames = 0;
+          pressed = SDL_FALSE;
         }
-      }
+      }// End of main loop
   }
 
-  free(renderSys);
+  //CLEANUP
+  SDL_DestroyTexture(firsttexture);
+  SDL_DestroyTexture(texture);
+  SDL_DestroyTexture(lasttexture);
+
   SDL_DestroyRenderer(renderer);
   SDL_DestroyWindow(window);
   SDL_Quit();
 }
 
+//Init SDL and all render objects
 void init() {
+  //SDL Init
   SDL_Init(SDL_INIT_VIDEO);
+  //Create window and renderer
   SDL_CreateWindowAndRenderer(nScreenWidth, nScreenHeight, 0, &window, &renderer);
-  generateMap();
+  //Initialize render tiles positions
+  firstrect.w = rect.w = lastrect.w = nScreenWidth;
+  firstrect.h = rect.h = lastrect.h = nScreenHeight;
+  firstrect.x = 0 - rect.w;
+  rect.x = 0;
+  lastrect.x = 0 + rect.w;
+  firstrect.y = rect.y = lastrect.y = 0;
+  //Initialize textures to SDL_TEXTUREACCESS_TARGET for drawing to them
+  texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, nScreenWidth, nScreenHeight);
+  lasttexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, nScreenWidth, nScreenHeight);
+  firsttexture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, nScreenWidth, nScreenHeight);
+  //Generate "galaxy" map from nState seed
+  generateMap(map);
 }
 
-void update(float delta, vec2* tilePos) {
-  const char* state = SDL_GetKeyboardState(NULL);
-
+void render() {
   //Clear screen
   SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
   SDL_RenderClear(renderer);
-  renderSys = generateTile(tilePos);
-  renderTile( renderSys);
+
+  //Render Tiles
+  SDL_RenderCopy(renderer, firsttexture, NULL, &firstrect);
+  SDL_RenderCopy(renderer, texture, NULL, &rect);
+  SDL_RenderCopy(renderer, lasttexture, NULL, &lastrect);
+
+  //Render Player
+  renderShip(renderer);
 
   SDL_RenderPresent(renderer);
-  if(frames % 100 == 0) tPos.x++;
-  printf("%d %f\n", tPos.x, delta);
 }
 
+void update(float delta) {
+  updateControls(delta);
 
-starSystem* generateTile(vec2* tilePos) {
-  switch(map[tilePos->x + (nScreenHeight*tilePos->y)]) {
-  case 'S': {
-    generateSpace();
-  }break;
-  case 'R': {
-    return generateRed(tilePos);
-  }break;
-  case 'G': {
-    return generateRed(tilePos);
 
-    generateGreen();
-  }break;
-  case 'B': {
-    return generateRed(tilePos);
- 
-    generateBlue();
-  }break;
-  case 'W': {
-    return generateRed(tilePos);
+  if(lastrect.x <= 0) {
+    updateTiles(SDL_TRUE);
+    updateTextures();
+    }
 
-    generateWhite();
-  }break;
+  if(firstrect.x >= 0) {
+    updateTiles(SDL_FALSE);
+    updateTextures();
   }
-  starSystem* s;
-  s->starSize = 0;
-  return s;
 }
 
-void generateMap() {
-  //Generate map
-  for(int x = 0; x < nScreenWidth; x++) {
-    for(int y = 0; y < nScreenHeight; y++) {
-      SDL_bool bIsStar = SDL_FALSE;
+void updateTiles(SDL_bool dir) {
+  if(dir)
+    tPos.x++;
+  else
+    tPos.x--;
+  vec2 vTemp = tPos;
+  vTemp.x--;
+  firstSys = generateTile(vTemp, nState, map);
+  vTemp.x++;
+  renderSys = generateTile(vTemp, nState, map);
+  vTemp.x++;
+  lastSys = generateTile(vTemp, nState, map);
+  rect.x = nScreenWidth - (player.pos.x - ((tPos.x )* nScreenWidth));
+  lastrect.x = rect.x + rect.w;
+  firstrect.x = rect.x - rect.w;
+}
 
-      int nSeed = y << 16 | x;
+void updateTextures() {
+  //Prepaire Textures
+  renderTile( renderSys, texture, renderer, nState);
+  renderTile( lastSys, lasttexture, renderer, nState);
+  renderTile( firstSys, firsttexture, renderer, nState);
+}
 
-      uint32_t nState = nSeed;
+void updateControls(float delta) {
+  const Uint8* state = SDL_GetKeyboardState(NULL);
 
-      bIsStar = Lehmer32(nState) % 256 < 6;
-
-      if(bIsStar) {
-        SDL_bool bIsBlueGiant = Lehmer32(nState) % 256 < 1;
-        SDL_bool bIsGreenGiant = Lehmer32(nState) % 256 < 2;
-        SDL_bool bIsRedGiant = Lehmer32(nState) % 256 < 3;
-        if(bIsRedGiant) {
-          map[x + (y*nScreenHeight)] = 'R';
-          if(bIsGreenGiant) {
-            map[x + (y*nScreenHeight)] = 'G';
-            if(bIsBlueGiant) {
-              map[x + (y*nScreenHeight)] = 'B';
-            }
-          }
+  if(state[SDL_SCANCODE_UP]) {
+      player.pos.y -= (int)(speed*delta);
+      if(player.pos.y <= 0)
+        player.pos.y += (int)(speed*delta);
+  }
+  else if(state[SDL_SCANCODE_DOWN]) {
+      player.pos.y += (int)(speed*delta);
+      if(player.pos.y >= (nScreenHeight*nScreenHeight))
+        player.pos.y += (int)(speed*delta);
+  }
+  else if(state[SDL_SCANCODE_LEFT]) {
+      player.pos.x -= (int)(speed*delta);
+      //Move Tiles
+      firstrect.x +=  (int)(speed*delta);
+      rect.x +=  (int)(speed*delta);
+      lastrect.x +=  (int)(speed*delta);
+      if(player.pos.x <= (int)(nScreenWidth/2))
+        {
+          player.pos.x += (int)(speed*delta);
+          //Move Tiles
+          firstrect.x -=  (int)(speed*delta);
+          rect.x -=  (int)(speed*delta);
+          lastrect.x -=  (int)(speed*delta);
         }
-        else
-          map[x + (y*nScreenHeight)] = 'W';
-      }
-      else
-        map[x + (y*nScreenHeight)] = 'S';
-    }
+  }
+  else if(state[SDL_SCANCODE_RIGHT]) {
+      player.pos.x += (int)(speed*delta);
+      //Move Tiles
+      firstrect.x -=  (int)(speed*delta);
+      rect.x -=  (int)(speed*delta);
+      lastrect.x -=  (int)(speed*delta);
+      if(player.pos.x >= (nScreenWidth*nScreenWidth)-(int)(nScreenWidth/2))
+        {
+          player.pos.x -= (int)(speed*delta);
+          //Move Tiles
+          firstrect.x +=  (int)(speed*delta);
+          rect.x += (int)(speed*delta);
+          lastrect.x += (int)(speed*delta);
+        }
   }
 }
-
-void generateSpace() {
-  for(int x = 0; x < nScreenWidth; x++) {
-    for(int y = 0; y < nScreenHeight; y++) {
-      tile[x + (y*nScreenHeight)] = 'S';
-    }
-  }
-}
-
-starSystem* generateRed(vec2* pos){
-  for(int x = 0; x < nScreenWidth; x++) {
-    for(int y = 0; y < nScreenHeight; y++) {
-      tile[x + (y*nScreenHeight)] = 'S';
-    }
-    puts("stage 0");
-    int nSeed = pos->y << 16 | pos->x;
-
-    puts("stage 1");
-    uint32_t nState = nSeed;
-
-    starSystem* tileSys;
-    tileSys = malloc(sizeof(starSystem));
-    //tileSys->posOnMap.x = pos->x;
-    puts("stage 2");
-    //tileSys->posOnMap.y = pos->y;
-    tileSys->starType = 'R';
-    tileSys->starSize = generateRand(7, 10, nState);
-    puts("stage 3");
-    tileSys->planetCount = generateRand(1,3, nState);
-    puts("stage 4");
-    for(int i = 0; i < tileSys->planetCount; i++) {
-      puts("stage 5");
-      planet* tempPlanet;
-      tempPlanet->pos.x = generateRand(0,  nScreenWidth, nState);
-      tempPlanet->pos.y = generateRand(0,  nScreenHeight, nState);
-      tempPlanet->size = generateRand(1, 5, nState);
-      tempPlanet->type = generateRand(1, 3, nState) + 'A';
-      puts("stage 6");
-      tileSys->planets[i] = tempPlanet;
-    }
-    printf("System generated!\n");
-    return tileSys;
-
-  }
-  tile[(int)(nScreenWidth/2) + (int)(nScreenHeight*(nScreenHeight)/2)] = 'R';
-}
-
-void generateGreen() {
-  for(int x = 0; x < nScreenWidth; x++) {
-    for(int y = 0; y < nScreenHeight; y++) {
-      tile[x + (y*nScreenHeight)] = 'S';
-    }
-  }
-  tile[(int)(nScreenWidth/2) + (int)((nScreenHeight)/2)] = 'G';
-}
-
-void generateBlue() {
-  for(int x = 0; x < nScreenWidth; x++) {
-    for(int y = 0; y < nScreenHeight; y++) {
-      tile[x + (y*nScreenHeight)] = 'S';
-    }
-  }
-  tile[(int)(nScreenWidth/2) + (int)((nScreenHeight)/2)] = 'B';
-}
-
-void generateWhite() {
-  for(int x = 0; x < nScreenWidth; x++) {
-    for(int y = 0; y < nScreenHeight; y++) {
-      tile[x + (y*nScreenHeight)] = 'S';
-    }
-  }
-  tile[(int)(nScreenWidth/2) + (int)((nScreenHeight)/2)] = 'W';
-}
-
-void renderMap() {
-  //Render Map
-  for(int x = 0; x < nScreenWidth; x++) {
-    for(int y = 0; y < nScreenHeight; y++) {
-      switch(map[x + (nScreenHeight*y)]) {
-      case 'S': {
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
-      }break;
-      case 'R': {
-        SDL_SetRenderDrawColor(renderer, 255, 0, 0, SDL_ALPHA_OPAQUE);
-      }break;
-      case 'G': {
-        SDL_SetRenderDrawColor(renderer, 0, 255, 0, SDL_ALPHA_OPAQUE);
-      }break;
-      case 'B': {
-        SDL_SetRenderDrawColor(renderer, 0, 0, 255, SDL_ALPHA_OPAQUE);
-      }break;
-      case 'W': {
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, SDL_ALPHA_OPAQUE);
-      }break;
-      }
-      SDL_RenderDrawPoint(renderer, x, y);
-    }
-  }
-}
-
-void renderTile(starSystem* sSystem) {
-  if(sSystem->starSize != 0) {
-    puts("Rendering");
-    SDL_Surface* surface = SDL_LoadBMP("star.bmp");
-    SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
-    SDL_Rect rect;
-    rect.x = (int)(nScreenWidth / 2);
-    rect.y = (int)(nScreenHeight / 2);
-    rect.w = 160;
-    rect.h = 160;
-    SDL_RenderCopy(renderer, texture, NULL, &rect);
-    puts(SDL_GetError());
-  }
-}
-
