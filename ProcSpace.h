@@ -1,7 +1,7 @@
 #include <SDL2/SDL.h>
 #include <math.h>
-#define nScreenWidth 640
-#define nScreenHeight 480
+#define nScreenWidth 800
+#define nScreenHeight 600
 
 typedef struct {
   int x;
@@ -26,6 +26,8 @@ typedef struct {
   int starSize;
   planet planets[10];
   int planetCount;
+  SDL_Texture* texture;
+  SDL_Rect rect;
 } starSystem;
 
 int generateRand(int nMin, int nMax, uint32_t nState);
@@ -38,7 +40,9 @@ void renderMap(int* map, SDL_Renderer* renderer);
 starSystem generateTile(vec2 tilePos,Uint32 nState, int* map);
 starSystem generateSystem(vec2 pos,Uint32 nState,char starType, int starSize, int planetCount, int planetSize);
 void rederShip();
-void renderTile(starSystem sSystem, SDL_Texture* texture, SDL_Renderer* renderer, Uint32 nState);
+void renderTile(starSystem sSystem, SDL_Renderer* renderer, Uint32 nState);
+float floatRange(float val, float oldMax, float oldMin, float newMax, float newMin);
+int intRange(int val, int oldMax, int oldMin, int newMax, int newMin);
 
 uint32_t Lehmer32(uint32_t state) {
   uint64_t product;
@@ -220,6 +224,7 @@ starSystem generateSystem(vec2 pos,Uint32 nState,char starType, int starSize, in
   starSystem tileSys;
   tileSys.posOnMap.x = pos.x;
   tileSys.posOnMap.y = pos.y;
+  printf("generateSystem: pos.x: %d y: %d\n", pos.x, pos.y);
   tileSys.starType = starType;
   tileSys.starSize = generateRand(starSize-3, starSize, nState);
   tileSys.planetCount = generateRand(1, planetCount, nState);
@@ -235,17 +240,30 @@ starSystem generateSystem(vec2 pos,Uint32 nState,char starType, int starSize, in
     tempPlanet.type = generateRand(1, 3, nState) + 'A';
     tileSys.planets[i] = tempPlanet;
   }
+  puts("generateSystem: Finished");
   return tileSys;
 }
 
-void renderTile(starSystem sSystem, SDL_Texture* texture, SDL_Renderer* renderer, Uint32 nState) {
-  SDL_SetRenderTarget(renderer, texture);
+void renderTile(starSystem sSystem, SDL_Renderer* renderer, Uint32 nState) {
 
+  if(sSystem.texture == NULL)
+    {
+      puts("Render Tile: texture Null");
+    }
+  puts("renderTile: Before SetRenderTarget");
+  void* mPixels = NULL;
+  int mPitch;
+  SDL_LockTexture(sSystem.texture, NULL, &mPixels, &mPitch);
+  SDL_SetRenderTarget(renderer, sSystem.texture);
+
+  puts("renderTile: After SetRenderTarget");
   SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
   SDL_RenderClear(renderer);
   if(sSystem.starSize != 0) {
+    puts("renderTile: Before temp Texture and Surface create");
     SDL_Surface* tempSurf = SDL_LoadBMP("star.bmp");
     SDL_Texture* tempTex = SDL_CreateTextureFromSurface(renderer, tempSurf);
+    puts("renderTile: After temp Texture and Surface create");
     Uint32 color;
     switch(sSystem.starType) {
     case 'R': { color = 0xffff0000;} break;
@@ -283,6 +301,8 @@ void renderTile(starSystem sSystem, SDL_Texture* texture, SDL_Renderer* renderer
     SDL_DestroyTexture(tempTex);
   }
   SDL_SetRenderTarget(renderer, NULL);
+  SDL_UnlockTexture(sSystem.texture);
+  free(mPixels);
 }
 
 void renderShip(SDL_Renderer* renderer) {
@@ -291,4 +311,17 @@ void renderShip(SDL_Renderer* renderer) {
                       (int)(nScreenWidth/2),
                       (int)(nScreenHeight/2)
                       );
+}
+
+
+int intRange(int val, int oldMax, int oldMin, int newMax, int newMin) {
+  int oldRange = oldMax - oldMin;
+  int newRange = newMax - newMin;
+  return (int)(((val - oldMin) * newRange) / oldRange) + newMin;
+}
+
+float floatRange(float val, float oldMax, float oldMin, float newMax, float newMin) {
+  float oldRange = oldMax - oldMin;
+  float newRange = newMax - newMin;
+  return (((val - oldMin) * newRange) / oldRange) + newMin;
 }
