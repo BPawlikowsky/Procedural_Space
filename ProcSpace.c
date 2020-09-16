@@ -13,19 +13,22 @@ float zoomCalc();
 void renderOutline();
 void updateTileContent();
 void updateArrDims();
+void updateEdgeTiles();
+void updateSystem(int x, int y, vec2 tTemp);
+void updateTexture(int x, int y);
 
 #define nScreenWidth 800
 #define nScreenHeight 600
 #define nTopSpeed 550
-#define nMaxZoom 5
+#define nMaxZoom 0.1f
 #define nMinZoom 0.1f
 int accel = 2;
 
 SDL_Window *window = NULL;
 SDL_Renderer *renderer = NULL;
-SDL_Texture* textures[27][27];
-SDL_Rect rects[27][27];
-starSystem systems[27][27], currentSystem;
+SDL_Texture* textures[12][12];
+SDL_Rect rects[12][12];
+starSystem systems[12][12], currentSystem;
 Uint32 nState = 0;
 int map[nScreenWidth*nScreenHeight];
 
@@ -37,8 +40,10 @@ ship player;
 int speed = 0;
 float zoom = 4.0f;
 int arrDim = 1;
+int arrMax;
 
 int main(void) {
+  arrMax = (3*arrDim)-1;
   // Init Video
   init();
   //Init Vars
@@ -98,13 +103,14 @@ int main(void) {
   }
 
   //CLEANUP
-  for(int x = 0; x < 27; x++)
-    for(int y = 0; y < 27; y++) 
+  for(int x = 0; x < 12; x++)
+    for(int y = 0; y < 12; y++) 
       SDL_DestroyTexture(textures[x][y]);
 
   SDL_DestroyRenderer(renderer);
   SDL_DestroyWindow(window);
   SDL_Quit();
+  puts("Cleaned up!");
 }
 
 //Init SDL and all render objects
@@ -114,7 +120,7 @@ void init() {
   //Create window and renderer
   SDL_CreateWindowAndRenderer(nScreenWidth, nScreenHeight, 0, &window, &renderer);
   //Initialize render tiles positions
-  int arrMax = 27;
+  arrMax = 12;
   for(int x = 0; x < arrMax; x++)
     for(int y = 0; y < arrMax;y++)
     {
@@ -133,7 +139,6 @@ void render() {
   SDL_RenderClear(renderer);
 
   //Render Tiles
-  int arrMax = (3*arrDim)-1;
   for(int x = 0; x < arrMax; x++)
     for(int y = 0; y < arrMax;y++)
       SDL_RenderCopy(renderer, textures[x][y], NULL, &rects[x][y]);
@@ -146,7 +151,6 @@ void render() {
 }
 
 void renderOutline() {
-  int arrMax = (3*arrDim)-1;
   SDL_SetRenderDrawColor(renderer, 20, 20, 20, SDL_ALPHA_OPAQUE);
   for(int x = 0; x < arrMax; x++)
     for(int y = 0; y < arrMax;y++)
@@ -155,67 +159,106 @@ void renderOutline() {
 
 void update(float delta) {
   updateControls(delta);
+  updateArrDims();
+  arrMax = (2*arrDim)-1;
+  updateEdgeTiles();
   updateTPos();
 
   //Switch controlling odd num in arrays
-  updateArrDims();
-  //updateTileContent();
 
   updateSize();
   updateTilePos();
 }
 
+void updateEdgeTiles() {
+  int playerX = (int)(player.pos.x / nScreenWidth);
+  int playerY = (int)(player.pos.y / nScreenHeight);
+  int offsetX, offsetY;
+  offsetX = 0;
+  offsetY = 0;
+  if(tPos.x < playerX)
+    offsetX = 1;
+  else if(tPos.x > playerX)
+    offsetX = -1;
+  if(tPos.y < playerY)
+    offsetY = 1;
+  else if(tPos.y > playerY)
+    offsetY = -1;
+
+  printf("offsetX: %d | offsetY: %d\n", offsetX, offsetY);
+  for(int x = (offsetY >= 0) ? 0 : 1; x < arrMax - ((offsetY < 0) ? 1 : 0); x++)
+    for(int y = (offsetX >= 0) ? 0 : 1; y < arrMax - ((offsetX < 0) ? 1 : 0); y++) {
+      systems[x][y] = systems[x+offsetY][y+offsetX];
+      textures[x][y] = textures[x+offsetY][y+offsetX];
+
+      vec2 tTemp = tPos;
+      int arrMin = 0;
+      int arrHalf = (int)((arrMax-1)/2);
+      int tempx = intRange(x, arrMax-1, arrMin, arrHalf, -arrHalf);
+      int tempy = intRange(y, arrMax-1, arrMin, arrHalf, -arrHalf);
+      tTemp.x += tempx;
+      tTemp.y += tempy;
+
+      if(offsetY > 0 && y == arrMax-1) {
+        tTemp.x++;
+        updateSystem(x, y, tTemp);
+        updateTexture(x, y);
+      }
+      else if(offsetY < 0 && y == 0) {
+        tTemp.x--;
+        updateSystem(x, y, tTemp);
+        updateTexture(x, y);
+      }
+      else if(offsetX > 0 && x == arrMax-1) {
+        tTemp.y++;
+        updateSystem(x, y, tTemp);
+        updateTexture(x, y);
+      }
+      else if(offsetX < 0 && x == 0) {
+        tTemp.y--;
+        updateSystem(x, y, tTemp);
+        updateTexture(x, y);
+      }
+    }
+}
+
+void updateSystem(int x, int y, vec2 tTemp) {
+  puts("Updating system");
+  systems[x][y] = generateTile(tTemp, nState, map);
+}
+
+void updateTexture(int x, int y) {
+  puts("Updating Texture");
+  renderTile(systems[x][y], textures[x][y], renderer, nState);
+}
+
 void updateArrDims() {
-  
   if(zoom < 0.9f) {
     switch((int)((1.0f-zoom)*10.0f)) {
-    case 1: arrDim = 3; break;
+    case 1: arrDim = 2; break;
     case 2:
     case 3: arrDim = 3; break;
     case 4:
-    case 5: arrDim = 3; break;
+    case 5: arrDim = 4; break;
     case 6:
-    case 7: arrDim = 3; break;
+    case 7: arrDim = 5; break;
     case 8:
-    case 9: arrDim = 5; break;
+    case 9: arrDim = 6; break;
     }
   }
   else {
-    arrDim = 1;
-    updateTiles();
-    updateTextures();
-  }
-}
-
-void updateTileContent() {
-  int arrMax = (3*arrDim)-1;
-  vec2 vTemp = tPos;
-  vTemp.x += intRange(arrMax-1, arrMax-1, 0, (arrMax/2), -(arrMax/2));
-  vTemp.y += intRange(arrMax-1, arrMax-1, 0, (arrMax/2), -(arrMax/2));
-  starSystem sTemp = generateTile(vTemp, nState, map);
-  if(zoom < 1.0f && systems[arrMax-1][arrMax-1].posOnMap.x != sTemp.posOnMap.x) {
-    updateTiles();
-    updateTextures();
-  }
-
-  vTemp.x += intRange(0, arrMax-1, 0, (arrMax/2), -(arrMax/2));
-  vTemp.y += intRange(0, arrMax-1, 0, (arrMax/2), -(arrMax/2));
-  sTemp = generateTile(vTemp, nState, map);
-  if(zoom < 1.0f && systems[0][0].posOnMap.x != sTemp.posOnMap.x) {
-    updateTiles();
-    updateTextures();
+    arrDim = 2;
   }
 }
 
 void updateTiles() {
-  int arrMax = (3*arrDim)-1;
   int arrMin = 0;
-  int arrHalf = (int)(arrMax/2);
+  int arrHalf = (int)((arrMax-1)/2);
   for(int x = 0; x < arrMax; x++) {
     for(int y =0; y < arrMax; y++) {
       vec2 vTemp = tPos;
-      int tempx = intRange(x, arrMax, arrMin, arrHalf, -arrHalf);
-      int tempy = intRange(y, arrMax, arrMin, arrHalf, -arrHalf);
+      int tempx = intRange(x, arrMax-1, arrMin, arrHalf, -arrHalf);
+      int tempy = intRange(y, arrMax-1, arrMin, arrHalf, -arrHalf);
       vTemp.x += tempx;
       vTemp.y += tempy;
       systems[x][y] = generateTile(vTemp, nState, map);
@@ -224,7 +267,6 @@ void updateTiles() {
 }
 
 void updateSize() {
-  int arrMax = (3*arrDim)-1;
   for(int x = 0; x < arrMax; x++)
     for(int y = 0; y < arrMax; y++) {
       rects[x][y].w = (int)(nScreenWidth * zoom);
@@ -240,10 +282,9 @@ void updateTilePos() {
   int halfWidth = width/2;
   int halfHeight = height/2;
 
-  int arrMax = (3*arrDim)-1;
   int arrMin = 0;
-  int arrHalf = (int)(arrMax/2);
-  int zero = intRange(0, arrHalf, -arrHalf, arrMax, arrMin);
+  int arrHalf = (int)((arrMax-1)/2);
+  int zero = intRange(0, arrHalf, -arrHalf, arrMax-1, arrMin);
   rects[zero][zero].x = ((width) - px);
   rects[zero][zero].y = ((height) - py);
   rects[zero][zero].x = intRange(rects[zero][zero].x, width, 0, halfWidth, -halfWidth);
@@ -251,9 +292,9 @@ void updateTilePos() {
 
   for(int x = 0; x < arrMax; x++) {
     for(int y =0; y < arrMax; y++) {
-      int tempx = intRange(x, arrMax, arrMin, arrHalf, -arrHalf);
-      int tempy = intRange(y, arrMax, arrMin, arrHalf, -arrHalf);
-      int zero = intRange(0, arrHalf, -arrHalf, arrMax, arrMin);
+      int tempx = intRange(x, arrMax-1, arrMin, arrHalf, -arrHalf);
+      int tempy = intRange(y, arrMax-1, arrMin, arrHalf, -arrHalf);
+      int zero = intRange(0, arrHalf, -arrHalf, arrMax-1, arrMin);
       rects[x][y].x = rects[zero][zero].x + (rects[zero][zero].w * tempx);
       rects[x][y].y = rects[zero][zero].y + (rects[zero][zero].h * tempy);
     }
@@ -263,7 +304,6 @@ void updateTilePos() {
 
 void updateTextures() {
   //Prepaire Textures
-  int arrMax = (3*arrDim)-1;
   for(int x = 0; x < arrMax; x++) {
     for(int y =0; y < arrMax; y++) {
       renderTile(systems[x][y], textures[x][y], renderer, nState);
@@ -325,12 +365,8 @@ float zoomCalc() {
 }
 
 void updateTPos() {
-  if(tPos.x != (int)(player.pos.x / nScreenWidth) ||
-                     tPos.y != (int)(player.pos.y / nScreenHeight)) {
+  if(tPos.x != (int)(player.pos.x / nScreenWidth) || tPos.y != (int)(player.pos.y / nScreenHeight)) {
     tPos.x = (int)(player.pos.x / nScreenWidth);
     tPos.y = (int)(player.pos.y / nScreenHeight);
-
-    updateTiles();
-    updateTextures();
   }
 }
