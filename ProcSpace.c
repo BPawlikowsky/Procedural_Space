@@ -20,15 +20,15 @@ void updateTexture(int x, int y);
 #define nScreenWidth 800
 #define nScreenHeight 600
 #define nTopSpeed 550
-#define nMaxZoom 0.1f
-#define nMinZoom 0.1f
+#define nMaxZoom 5.1f
+#define nMinZoom 0.07f
 int accel = 2;
 
 SDL_Window *window = NULL;
 SDL_Renderer *renderer = NULL;
-SDL_Texture* textures[12][12];
-SDL_Rect rects[12][12];
-starSystem systems[12][12], currentSystem;
+SDL_Texture* textures[15][15];
+SDL_Rect rects[15][15];
+starSystem systems[15][15], currentSystem;
 Uint32 nState = 0;
 int map[nScreenWidth*nScreenHeight];
 
@@ -103,8 +103,8 @@ int main(void) {
   }
 
   //CLEANUP
-  for(int x = 0; x < 12; x++)
-    for(int y = 0; y < 12; y++) 
+  for(int x = 0; x < 15; x++)
+    for(int y = 0; y < 15; y++) 
       SDL_DestroyTexture(textures[x][y]);
 
   SDL_DestroyRenderer(renderer);
@@ -118,9 +118,9 @@ void init() {
   //SDL Init
   SDL_Init(SDL_INIT_VIDEO);
   //Create window and renderer
-  SDL_CreateWindowAndRenderer(nScreenWidth, nScreenHeight, 0, &window, &renderer);
+  SDL_CreateWindowAndRenderer(nScreenWidth, nScreenHeight, SDL_WINDOW_FULLSCREEN, &window, &renderer);
   //Initialize render tiles positions
-  arrMax = 12;
+  arrMax = 15;
   for(int x = 0; x < arrMax; x++)
     for(int y = 0; y < arrMax;y++)
     {
@@ -159,78 +159,19 @@ void renderOutline() {
 
 void update(float delta) {
   updateControls(delta);
+  updateTPos();
   updateArrDims();
   arrMax = (2*arrDim)-1;
-  updateEdgeTiles();
-  updateTPos();
 
   //Switch controlling odd num in arrays
 
   updateSize();
   updateTilePos();
+
+  updateTiles();
+  updateTextures();
 }
 
-void updateEdgeTiles() {
-  int playerX = (int)(player.pos.x / nScreenWidth);
-  int playerY = (int)(player.pos.y / nScreenHeight);
-  int offsetX, offsetY;
-  offsetX = 0;
-  offsetY = 0;
-  if(tPos.x < playerX)
-    offsetX = 1;
-  else if(tPos.x > playerX)
-    offsetX = -1;
-  if(tPos.y < playerY)
-    offsetY = 1;
-  else if(tPos.y > playerY)
-    offsetY = -1;
-
-  printf("offsetX: %d | offsetY: %d\n", offsetX, offsetY);
-  for(int x = (offsetY >= 0) ? 0 : 1; x < arrMax - ((offsetY < 0) ? 1 : 0); x++)
-    for(int y = (offsetX >= 0) ? 0 : 1; y < arrMax - ((offsetX < 0) ? 1 : 0); y++) {
-      systems[x][y] = systems[x+offsetY][y+offsetX];
-      textures[x][y] = textures[x+offsetY][y+offsetX];
-
-      vec2 tTemp = tPos;
-      int arrMin = 0;
-      int arrHalf = (int)((arrMax-1)/2);
-      int tempx = intRange(x, arrMax-1, arrMin, arrHalf, -arrHalf);
-      int tempy = intRange(y, arrMax-1, arrMin, arrHalf, -arrHalf);
-      tTemp.x += tempx;
-      tTemp.y += tempy;
-
-      if(offsetY > 0 && y == arrMax-1) {
-        tTemp.x++;
-        updateSystem(x, y, tTemp);
-        updateTexture(x, y);
-      }
-      else if(offsetY < 0 && y == 0) {
-        tTemp.x--;
-        updateSystem(x, y, tTemp);
-        updateTexture(x, y);
-      }
-      else if(offsetX > 0 && x == arrMax-1) {
-        tTemp.y++;
-        updateSystem(x, y, tTemp);
-        updateTexture(x, y);
-      }
-      else if(offsetX < 0 && x == 0) {
-        tTemp.y--;
-        updateSystem(x, y, tTemp);
-        updateTexture(x, y);
-      }
-    }
-}
-
-void updateSystem(int x, int y, vec2 tTemp) {
-  puts("Updating system");
-  systems[x][y] = generateTile(tTemp, nState, map);
-}
-
-void updateTexture(int x, int y) {
-  puts("Updating Texture");
-  renderTile(systems[x][y], textures[x][y], renderer, nState);
-}
 
 void updateArrDims() {
   if(zoom < 0.9f) {
@@ -243,7 +184,7 @@ void updateArrDims() {
     case 6:
     case 7: arrDim = 5; break;
     case 8:
-    case 9: arrDim = 6; break;
+    case 9: arrDim = 8; break;
     }
   }
   else {
@@ -365,8 +306,6 @@ float zoomCalc() {
 }
 
 void updateTPos() {
-  if(tPos.x != (int)(player.pos.x / nScreenWidth) || tPos.y != (int)(player.pos.y / nScreenHeight)) {
     tPos.x = (int)(player.pos.x / nScreenWidth);
     tPos.y = (int)(player.pos.y / nScreenHeight);
-  }
 }
