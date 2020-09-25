@@ -1,34 +1,13 @@
 #include "ProcSpace.h"
 
-void init(void);
-void render();
-void update(float delta);
-void updateTiles();
-void updateControls(float delta);
-void updateTextures();
-void updateTPos();
-void updateTilePos();
-void updateSize();
-float zoomCalc();
-void renderOutline();
-void updateTileContent();
-void updateArrDims();
-void updateEdgeTiles();
-void updateSystem(int x, int y, vec2 tTemp);
-void updateTexture(int x, int y);
+vec2 pos = {0,0};
 
-#define nScreenWidth 800
-#define nScreenHeight 600
-#define nTopSpeed 550
-#define nMaxZoom 5.1f
-#define nMinZoom 0.07f
+
 int accel = 2;
 
 SDL_Window *window = NULL;
 SDL_Renderer *renderer = NULL;
-SDL_Texture* textures[15][15];
-SDL_Rect rects[15][15];
-starSystem systems[15][15], currentSystem;
+starSystem systems[15][15];
 Uint32 nState = 0;
 int map[nScreenWidth*nScreenHeight];
 
@@ -37,18 +16,23 @@ int frames;
 float milis;
 SDL_bool pressed = SDL_FALSE;
 ship player;
-int speed = 0;
+float speed = 0;
 float zoom = 4.0f;
 int arrDim = 1;
-int arrMax;
+int arrMax = 15;
 
 int main(void) {
-  arrMax = (3*arrDim)-1;
   // Init Video
   init();
   //Init Vars
-  player.pos.x = (int)( (nScreenWidth*nScreenWidth) / 2);
-  player.pos.y = (int)((nScreenHeight*nScreenHeight / 2));
+  player.pos.x = (nScreenWidth*nScreenWidth)/2;
+  player.pos.y = (nScreenHeight*nScreenHeight)/2;
+  updateTPos();
+
+  updateTiles();
+  updateSize();
+  updateTilePos();
+  updateTextures(systems, arrMax, renderer, nState);
 
   //Time tracking
   uint32_t lastTick, currentTick;
@@ -95,6 +79,7 @@ int main(void) {
           printf("PPos x: %d y: %d | \n", player.pos.x, player.pos.y);
           printf("zoom: %f | arrDim: %d \n", zoom, arrDim);
           printf("%d\n",frames);
+          showTileInfo();
           milis = 0.0f;
           frames = 0;
           pressed = SDL_FALSE;
@@ -105,7 +90,7 @@ int main(void) {
   //CLEANUP
   for(int x = 0; x < 15; x++)
     for(int y = 0; y < 15; y++) 
-      SDL_DestroyTexture(textures[x][y]);
+      SDL_DestroyTexture(systems[x][y].texture);
 
   SDL_DestroyRenderer(renderer);
   SDL_DestroyWindow(window);
@@ -118,16 +103,15 @@ void init() {
   //SDL Init
   SDL_Init(SDL_INIT_VIDEO);
   //Create window and renderer
-  SDL_CreateWindowAndRenderer(nScreenWidth, nScreenHeight, SDL_WINDOW_FULLSCREEN, &window, &renderer);
+  SDL_CreateWindowAndRenderer(nScreenWidth, nScreenHeight, 0, &window, &renderer);
   //Initialize render tiles positions
-  arrMax = 15;
   for(int x = 0; x < arrMax; x++)
     for(int y = 0; y < arrMax;y++)
     {
-      rects[x][y].w = rects[x][y].w = rects[x][y].w = nScreenWidth;
-      rects[x][y].h = rects[x][y].h = rects[x][y].h = nScreenHeight;
+      systems[x][y].rect.w = nScreenWidth;
+      systems[x][y].rect.h = nScreenHeight;
       //Initialize textures to SDL_TEXTUREACCESS_TARGET for drawing to them
-      textures[x][y] = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, nScreenWidth, nScreenHeight);
+      systems[x][y].texture = SDL_CreateTexture(renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_TARGET, nScreenWidth, nScreenHeight);
     }
   //Generate "galaxy" map from nState seed
   generateMap(map);
@@ -138,11 +122,9 @@ void render() {
   SDL_SetRenderDrawColor(renderer, 0, 0, 0, SDL_ALPHA_OPAQUE);
   SDL_RenderClear(renderer);
 
-  //Render Tiles
-  for(int x = 0; x < arrMax; x++)
-    for(int y = 0; y < arrMax;y++)
-      SDL_RenderCopy(renderer, textures[x][y], NULL, &rects[x][y]);
-  renderOutline();
+  renderTiles(systems, arrMax, renderer);
+
+  renderOutline(systems, arrMax, renderer);
 
   //Render Player
   renderShip(renderer);
@@ -150,39 +132,28 @@ void render() {
   SDL_RenderPresent(renderer);
 }
 
-void renderOutline() {
-  SDL_SetRenderDrawColor(renderer, 20, 20, 20, SDL_ALPHA_OPAQUE);
-  for(int x = 0; x < arrMax; x++)
-    for(int y = 0; y < arrMax;y++)
-      SDL_RenderDrawRect(renderer, &rects[x][y]);
-}
-
 void update(float delta) {
   updateControls(delta);
-  updateTPos();
   updateArrDims();
   arrMax = (2*arrDim)-1;
+  updateTPos();
 
-  //Switch controlling odd num in arrays
-
+  //updateTiles();
   updateSize();
   updateTilePos();
-
-  updateTiles();
-  updateTextures();
+  //updateTextures();
 }
-
 
 void updateArrDims() {
   if(zoom < 0.9f) {
     switch((int)((1.0f-zoom)*10.0f)) {
     case 1: arrDim = 2; break;
     case 2:
-    case 3: arrDim = 3; break;
+    case 3: arrDim = 2; break;
     case 4:
-    case 5: arrDim = 4; break;
+    case 5: arrDim = 2; break;
     case 6:
-    case 7: arrDim = 5; break;
+    case 7: arrDim = 2; break;
     case 8:
     case 9: arrDim = 8; break;
     }
@@ -198,10 +169,14 @@ void updateTiles() {
   for(int x = 0; x < arrMax; x++) {
     for(int y =0; y < arrMax; y++) {
       vec2 vTemp = tPos;
+
       int tempx = intRange(x, arrMax-1, arrMin, arrHalf, -arrHalf);
       int tempy = intRange(y, arrMax-1, arrMin, arrHalf, -arrHalf);
       vTemp.x += tempx;
       vTemp.y += tempy;
+      if(systems[x][y].texture != NULL) {
+        //SDL_DestroyTexture(systems[x][y].texture);
+      }
       systems[x][y] = generateTile(vTemp, nState, map);
     }
   }
@@ -210,47 +185,42 @@ void updateTiles() {
 void updateSize() {
   for(int x = 0; x < arrMax; x++)
     for(int y = 0; y < arrMax; y++) {
-      rects[x][y].w = (int)(nScreenWidth * zoom);
-      rects[x][y].h = (int)(nScreenHeight * zoom);
+      systems[x][y].rect.w = (int)(nScreenWidth * zoom);
+      systems[x][y].rect.h = (int)(nScreenHeight * zoom);
     }
 }
 
 void updateTilePos() {
   int width = nScreenWidth;
   int height = nScreenHeight;
-  int px = (player.pos.x - (tPos.x * width))*zoom;
-  int py = (player.pos.y - (tPos.y * height))*zoom;
-  int halfWidth = width/2;
-  int halfHeight = height/2;
+  vec2 vtemp = tPos;
+  int px = (player.pos.x - (vtemp.x * width))*zoom;
+  int py = (player.pos.y - (vtemp.y * height))*zoom;
+  int halfWidth = (int)(width/2);
+  int halfHeight = (int)(height/2);
 
   int arrMin = 0;
   int arrHalf = (int)((arrMax-1)/2);
   int zero = intRange(0, arrHalf, -arrHalf, arrMax-1, arrMin);
-  rects[zero][zero].x = ((width) - px);
-  rects[zero][zero].y = ((height) - py);
-  rects[zero][zero].x = intRange(rects[zero][zero].x, width, 0, halfWidth, -halfWidth);
-  rects[zero][zero].y = intRange(rects[zero][zero].y, height, 0, halfHeight, -halfHeight);
+  if(zero >= 0) {
+  systems[zero][zero].rect.x = width - px;
+  systems[zero][zero].rect.y = height - py;
+  systems[zero][zero].rect.x = intRange(systems[zero][zero].rect.x, width, 0, halfWidth, -halfWidth);
+  systems[zero][zero].rect.y = intRange(systems[zero][zero].rect.y, height, 0, halfHeight, -halfHeight);
+  }
 
   for(int x = 0; x < arrMax; x++) {
-    for(int y =0; y < arrMax; y++) {
+    for(int y = 0; y < arrMax; y++) {
       int tempx = intRange(x, arrMax-1, arrMin, arrHalf, -arrHalf);
       int tempy = intRange(y, arrMax-1, arrMin, arrHalf, -arrHalf);
-      int zero = intRange(0, arrHalf, -arrHalf, arrMax-1, arrMin);
-      rects[x][y].x = rects[zero][zero].x + (rects[zero][zero].w * tempx);
-      rects[x][y].y = rects[zero][zero].y + (rects[zero][zero].h * tempy);
-    }
-  }
-
-}
-
-void updateTextures() {
-  //Prepaire Textures
-  for(int x = 0; x < arrMax; x++) {
-    for(int y =0; y < arrMax; y++) {
-      renderTile(systems[x][y], textures[x][y], renderer, nState);
+      if(zero >= 0) {
+        systems[x][y].rect.x = systems[zero][zero].rect.x + (systems[zero][zero].rect.w * tempx);
+        systems[x][y].rect.y = systems[zero][zero].rect.y + (systems[zero][zero].rect.h * tempy);
+      }
     }
   }
 }
+
 
 void updateControls(float delta) {
   const Uint8* state = SDL_GetKeyboardState(NULL);
@@ -258,40 +228,37 @@ void updateControls(float delta) {
   if(state[SDL_SCANCODE_UP]) {
     if(speed < nTopSpeed) speed ++;
     zoom = zoomCalc();
-    player.pos.y -= (int)(speed*accel*delta);
+    pos.y --;
 
     if(player.pos.y <= (int)(nScreenHeight/2))
-      player.pos.y += (int)(speed*accel*delta);
+      pos.y ++;
   }
   else if(state[SDL_SCANCODE_DOWN]) {
     if(speed < nTopSpeed) speed ++;
     zoom = zoomCalc();
-    player.pos.y += (int)(speed*accel*delta);
+    pos.y ++;
     if(player.pos.y >= (nScreenHeight*nScreenHeight)-(int)(nScreenHeight/2))
-      player.pos.y -= (int)(speed*accel*delta);
+      pos.y --;
   }
   else if(state[SDL_SCANCODE_LEFT]) {
-    if(speed < nTopSpeed)
-      speed ++;
+    if(speed < nTopSpeed) speed ++;
     zoom = zoomCalc();
-    player.pos.x -= (int)(speed*accel*delta);
+    pos.x --;
 
     if(player.pos.x <= (int)(nScreenWidth/2))
-      player.pos.x += (int)(speed*accel*delta);
+      pos.x ++;
   }
   else if(state[SDL_SCANCODE_RIGHT]) {
     if(speed < nTopSpeed) speed ++;
     zoom = zoomCalc();
-    player.pos.x += (int)(speed*accel*delta);
+    pos.x ++;
 
     if(player.pos.x >= (nScreenWidth*nScreenWidth)-(int)(nScreenWidth/2))
-      {
-        player.pos.x -= (int)(speed*accel*delta);
-      }
+        pos.x --;
   }
   else {
     if(speed > 0) {
-      speed --;
+      speed -= (1/speed)*delta;
       zoom = zoomCalc();
     }
     else {
@@ -299,13 +266,101 @@ void updateControls(float delta) {
       zoom = nMaxZoom;
     }
   }
+  player.pos.x += (int)(pos.x*delta);
+  player.pos.y += (int)(pos.y*delta);
 }
 
 float zoomCalc() {
   return floatRange(speed, nTopSpeed, 0, nMinZoom, nMaxZoom);
 }
 
+void shiftTilesLeft() {
+  for(int x = 0; x < arrMax; x++)
+    for(int y = 0; y < arrMax; y++) {
+      if(x == arrMax-1) {
+        vec2 tTemp = tPos;
+        int arrMin = 0;
+        int arrHalf = (int)((arrMax-1)/2);
+        int tempx = intRange(x, arrMax-1, arrMin, arrHalf, -arrHalf);
+        int tempy = intRange(y, arrMax-1, arrMin, arrHalf, -arrHalf);
+        tTemp.x += tempx+1;
+        tTemp.y += tempy;
+        updateSystem(x, y, tTemp);
+        updateTexture(x, y);
+      }
+      else {
+        systems[x][y] = systems[x+1][y];
+      }
+    }
+}
+
+void shiftTilesRight() {
+  for(int x = 0; x < arrMax; x++)
+    for(int y = arrMax-1; y >= 0; y--) {
+      if(x == 0) {
+        vec2 tTemp = tPos;
+        int arrMin = 0;
+        int arrHalf = (int)((arrMax-1)/2);
+        int tempx = intRange(x, arrMax-1, arrMin, arrHalf, -arrHalf);
+        int tempy = intRange(y, arrMax-1, arrMin, arrHalf, -arrHalf);
+        tTemp.x += tempx - 1;
+        tTemp.y += tempy;
+        updateSystem(x, y, tTemp);
+        updateTexture(x, y);
+      }
+      else {
+        systems[x][y] = systems[x-1][y];
+      }
+    }
+}
+
+void showTileInfo() {
+  for(int y = 0; y < arrMax; y++) {
+    for(int x = 0; x < arrMax; x++) {
+    
+      printf("%d ", systems[x][y].starSize);
+    }
+    printf("\n");
+  }
+  puts("---------------------------------------------");
+}
+
 void updateTPos() {
+  int pX = (int)(player.pos.x / nScreenWidth);
+  int pY = (int)(player.pos.y / nScreenHeight);
+  if(tPos.x != pX || tPos.y != pY) {
+
+    if(tPos.x < pX)
+      shiftTilesLeft();
+    if(tPos.x > pX)
+      shiftTilesRight();
+
     tPos.x = (int)(player.pos.x / nScreenWidth);
     tPos.y = (int)(player.pos.y / nScreenHeight);
+    // updateTiles();
+    // updateTextures();
+  }
+}
+
+void updateSystem(int x, int y, vec2 tTemp) {
+  systems[x][y] = generateTile(tTemp, nState, map);
+}
+
+void updateTexture(int x, int y) {
+  if(systems[x][y].texture != NULL) {
+    //SDL_DestroyTexture(systems[x][y].texture);
+  }
+  systems[x][y].texture = renderTile(systems[x][y], renderer, nState);
+}
+
+void updateTextures(starSystem systems[15][15], int arrMax, SDL_Renderer* renderer, Uint32 nState) {
+  //Prepaire Textures
+  for(int x = 0; x < arrMax; x++) {
+    for(int y =0; y < arrMax; y++) {
+      if(systems[x][y].texture != NULL) {
+        //SDL_DestroyTexture(systems[x][y].texture);
+      }
+      systems[x][y].texture = renderTile(systems[x][y], renderer, nState);
+    }
+  }
 }
