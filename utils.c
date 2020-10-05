@@ -1,19 +1,7 @@
-#include "ProcSpace.h"
+#include "include/ProcSpace.h"
 
 int generateRand(int nMin, int nMax, uint32_t nState) {
   return (int)(Lehmer32(nState) % (nMax - nMin)) + nMin;
-}
-
-int intRange(int val, int oldMax, int oldMin, int newMax, int newMin) {
-  int oldRange = oldMax - oldMin;
-  int newRange = newMax - newMin;
-  return (int)(((val - oldMin) * newRange) / oldRange) + newMin;
-}
-
-float floatRange(float val, float oldMax, float oldMin, float newMax, float newMin) {
-  float oldRange = oldMax - oldMin;
-  float newRange = newMax - newMin;
-  return (((val - oldMin) * newRange) / oldRange) + newMin;
 }
 
 uint32_t Lehmer32(uint32_t state) {
@@ -26,4 +14,17 @@ uint32_t Lehmer32(uint32_t state) {
   uint32_t m2 = (product >> 32) ^ product;
 
 	return m2;
+}
+
+void gravity(circle* c, circle sun) {
+  fvec2d force = fvecSubstract( sun.pos, c->pos);
+  double mag = fvecMagnatudeGet(force);
+  float distance = constrainf(mag*mag, 25.0, 10000.0);
+  double strength = G * (sun.mass * c->mass) / distance;
+  force = fvecMagnatudeSet(fvecNormalize(force), strength);
+
+  force.x /= c->mass;
+  force.y /= c->mass;
+  c->acc.x += force.x;
+  c->acc.y += force.y;
 }
