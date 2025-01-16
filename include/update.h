@@ -1,3 +1,8 @@
+#pragma once
+#include "vector.h"
+#include "utils.h"
+#include "config.h"
+#include "generate.h"
 
 //Updates
 void updateArrDims(float zoom, int* arrDim);

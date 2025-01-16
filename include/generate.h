@@ -1,3 +1,11 @@
+#pragma once
+#include "datatypes.h"
+#include "vector.h"
+#include "config.h"
+#include "render.h"
+#include "utils.h"
+#include "render.h"
+#include <SDL2/SDL.h>
 
 //Generate
 starSystem generateTile(ivec2d tilePos, int* map, SDL_Texture* tex);

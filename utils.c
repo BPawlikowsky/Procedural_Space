@@ -1,4 +1,4 @@
-#include "include/ProcSpace.h"
+#include "include/utils.h"
 
 int generateRand(int nMin, int nMax, uint32_t nState) {
   return (int)(Lehmer32(nState) % (nMax - nMin)) + nMin;

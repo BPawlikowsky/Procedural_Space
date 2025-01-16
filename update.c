@@ -1,4 +1,4 @@
-#include "include/ProcSpace.h"
+#include "include/update.h"
 
 void updateTileCirclesPos(starSystem systems[STAR_MAP_SIZE][STAR_MAP_SIZE], double delta, int arrMax) {
   for(int x = 0; x < arrMax; x++) {

@@ -1,3 +1,6 @@
+#pragma once
+#include "datatypes.h"
+#include "config.h"
 
 //Utils
 int intRange(int oldMin, int oldMax, int newMin, int newMax, int value);

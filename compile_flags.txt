@@ -1,0 +1,4 @@
+-I
+/usr/local/include/
+-lSDL2
+-lm

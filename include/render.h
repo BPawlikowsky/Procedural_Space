@@ -1,3 +1,7 @@
+#pragma once
+#include <SDL2/SDL.h>
+#include "datatypes.h"
+#include "config.h"
 
 //Render
 void renderMap(int* map, SDL_Renderer* renderer);

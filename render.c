@@ -1,4 +1,4 @@
-#include "include/ProcSpace.h"
+#include "include/render.h"
 
 void renderTiles(starSystem systems[STAR_MAP_SIZE][STAR_MAP_SIZE], int arrMax, SDL_Renderer* renderer) {
   SDL_Color clear = {0, 0, 0, 0};
